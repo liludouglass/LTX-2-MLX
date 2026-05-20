@@ -292,62 +292,8 @@ def decode_tiled(
     out_h = h * scale_h
     out_w = w * scale_w
 
-    # Initialize output buffer and weight accumulator
-    output = mx.zeros((b, 3, out_t, out_h, out_w))
-    weights = mx.zeros((b, 1, out_t, out_h, out_w))
-
-    for tile_spec in tiles:
-        # Extract tile from latent
-        tile_latent = latent[
-            :, :,
-            tile_spec.in_t_start:tile_spec.in_t_end,
-            tile_spec.in_h_start:tile_spec.in_h_end,
-            tile_spec.in_w_start:tile_spec.in_w_end,
-        ]
-
-        # Decode tile
-        decoded_tile = decoder_fn(tile_latent, timestep=timestep)
-        mx.eval(decoded_tile)
-
-        # Generate blending mask
-        tile_t = tile_spec.out_t_end - tile_spec.out_t_start
-        tile_h = tile_spec.out_h_end - tile_spec.out_h_start
-        tile_w = tile_spec.out_w_end - tile_spec.out_w_start
-
-        mask_t = compute_trapezoidal_mask_1d(
-            tile_t, tile_spec.ramp_t_left, tile_spec.ramp_t_right,
-            left_starts_from_0=(tile_spec.out_t_start == 0)
-        )
-        mask_h = compute_trapezoidal_mask_1d(tile_h, tile_spec.ramp_h_left, tile_spec.ramp_h_right)
-        mask_w = compute_trapezoidal_mask_1d(tile_w, tile_spec.ramp_w_left, tile_spec.ramp_w_right)
-
-        # Create 5D mask by outer product
-        mask = mask_t[None, None, :, None, None] * mask_h[None, None, None, :, None] * mask_w[None, None, None, None, :]
-
-        # Accumulate into output buffer
-        # We need to handle the accumulation carefully since MLX doesn't have in-place ops
-        out_slice = (
-            slice(None), slice(None),
-            slice(tile_spec.out_t_start, tile_spec.out_t_end),
-            slice(tile_spec.out_h_start, tile_spec.out_h_end),
-            slice(tile_spec.out_w_start, tile_spec.out_w_end),
-        )
-
-        # Create update arrays
-        decoded_actual = decoded_tile[:, :, :tile_t, :tile_h, :tile_w]
-        output_update = decoded_actual * mask
-        weight_update = mask
-
-        # For simplicity, we'll create a sparse update
-        # This is less efficient but clearer
-        temp_output = mx.zeros_like(output)
-        temp_weights = mx.zeros_like(weights)
-
-        # We'll use a different approach: process tiles in temporal order
-        # and yield chunks as they complete
-
-    # Since MLX doesn't have efficient scatter operations, we'll use a different approach
-    # Process tiles and yield the final blended result
+    # Since MLX doesn't have efficient scatter operations, process tiles and
+    # rebuild the output buffer after each weighted update.
     output = mx.zeros((b, 3, out_t, out_h, out_w))
     weights = mx.zeros((1, 1, out_t, out_h, out_w))
 

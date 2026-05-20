@@ -115,3 +115,12 @@ Plan:
 5. Review output clips for visual regression.
 
 Risk: low behavior risk, medium shared-code risk. It touches all tiled VAE users, but removed code has no output path. Speed win may be modest if transformer denoise dominates, but this is clearest high-value fix.
+
+Status: implemented by removing the dead first tile loop only. Compile passed with `uv run python -m py_compile LTX_2_MLX/model/video_vae/tiling.py`.
+
+Validation result:
+
+- Same benchmark: `448x800`, `121f`, `8 steps`, `2 chunks`.
+- Previous total: `550.36s`; fixed total: `491.50s` (`10.7%` faster).
+- Previous chunk 2: `202.62s`; fixed chunk 2: `181.46s` (`10.4%` faster).
+- Output dir: `outputs/persistent_ltx23_tiling_fix_448x800_121f_8step_v1`.

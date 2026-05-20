@@ -193,6 +193,7 @@ Validation runs:
 | --- | --- | ---: | ---: | ---: | --- |
 | Smoke | `384x576`, `9f`, `1 step`, `1 chunk` | `134.76s` | `5.05s` | n/a | Validated imports, loads, prompt cache, MP4 save, manifest. |
 | Benchmark | `448x800`, `121f`, `8 steps`, `2 chunks` | `550.36s` | `223.85s` | `202.62s` | Chunk 2 skips model loads and prompt encode. |
+| Tiling fix benchmark | `448x800`, `121f`, `8 steps`, `2 chunks` | `491.50s` | `181.97s` | `181.46s` | Dead first tiled decode loop removed. |
 
 Persistent benchmark details:
 
@@ -200,6 +201,13 @@ Persistent benchmark details:
 - Prompt encode: `73.45s` once.
 - Chunk 2 steady-state: `202.62s` for `121f` at `24fps` output = about `40.2 min` wall per generated minute.
 - 2-chunk total including loads/encode: `54.58 min` wall per generated minute.
+
+After tiled decode fix:
+
+- Total: `491.50s`, down from `550.36s` (`10.7%` faster).
+- Chunk 2 steady-state: `181.46s`, down from `202.62s` (`10.4%` faster).
+- Wall per generated minute including loads/encode: `48.74 min`, down from `54.58 min`.
+- Output dir: `outputs/persistent_ltx23_tiling_fix_448x800_121f_8step_v1`.
 
 Persistent outputs:
 
