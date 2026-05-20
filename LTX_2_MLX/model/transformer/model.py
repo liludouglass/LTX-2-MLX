@@ -822,7 +822,10 @@ class LTXModel(nn.Module):
         if self.model_type.is_video_enabled():
             if video is None:
                 raise ValueError("Video modality required for video-enabled model")
-            video_args = self._video_args_preprocessor.prepare(video, audio)
+            if self.model_type == LTXModelType.AudioVideo:
+                video_args = self._video_args_preprocessor.prepare(video, audio)
+            else:
+                video_args = self._video_args_preprocessor.prepare(video)
 
         audio_args = None
         if self.model_type.is_audio_enabled():

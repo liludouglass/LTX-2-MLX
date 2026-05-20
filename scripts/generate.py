@@ -120,6 +120,10 @@ from LTX_2_MLX.pipelines.one_stage import (
     OneStagePipeline,
     OneStageCFGConfig,
 )
+from LTX_2_MLX.pipelines.my_pipeline import (
+    MyPipeline,
+    MyPipelineConfig,
+)
 from LTX_2_MLX.pipelines.common import ImageCondition
 from LTX_2_MLX.pipelines.ic_lora import (
     ControlType,
@@ -841,6 +845,7 @@ def load_av_transformer(
     compute_dtype: mx.Dtype = mx.float32,
     use_fp8: bool = False,
     low_memory: bool = False,
+    fast_mode: bool = False,
     caption_channels: int | None = 3840,
     cross_attention_adaln: bool = False,
     apply_gated_attention: bool = False,
@@ -856,8 +861,9 @@ def load_av_transformer(
     dtype_name = "FP16" if compute_dtype == mx.float16 else ("BF16" if compute_dtype == mx.bfloat16 else "FP32")
     fp8_str = " (FP8 dequantized)" if use_fp8 else ""
     mem_str = " (low memory)" if low_memory else ""
+    fast_str = " (fast mode)" if fast_mode else ""
     v2_str = " (V2)" if cross_attention_adaln else ""
-    print(f"Loading AudioVideo transformer ({dtype_name}{fp8_str}{mem_str}{v2_str})...")
+    print(f"Loading AudioVideo transformer ({dtype_name}{fp8_str}{mem_str}{fast_str}{v2_str})...")
 
     model = LTXAVModel(
         model_type=LTXModelType.AudioVideo,
@@ -871,6 +877,7 @@ def load_av_transformer(
         positional_embedding_theta=10000.0,
         compute_dtype=compute_dtype,
         low_memory=low_memory,
+        fast_mode=fast_mode,
         cross_attention_adaln=cross_attention_adaln,
         apply_gated_attention=apply_gated_attention,
         av_ca_timestep_scale_multiplier=1000,
@@ -1157,7 +1164,7 @@ def generate_video(
         if not use_placeholder and weights_path:
             model = load_av_transformer(
                 weights_path, num_layers=48, compute_dtype=compute_dtype,
-                use_fp8=use_fp8, low_memory=low_memory,
+                use_fp8=use_fp8, low_memory=low_memory, fast_mode=fast_mode,
                 caption_channels=None if v2 else 3840,
                 cross_attention_adaln=v2,
                 apply_gated_attention=v2,
@@ -1682,8 +1689,12 @@ def generate_video(
             audio_sample_rate = vocoder.output_sample_rate if vocoder else 24000
 
         # Create one-stage pipeline with audio support
-        print("\n[4/5] Creating audio-video pipeline...")
-        av_pipeline = OneStagePipeline(
+        is_my_pipeline = pipeline_type == "my-pipeline"
+        pipeline_label = "my-pipeline" if is_my_pipeline else "audio-video pipeline"
+        print(f"\n[4/5] Creating {pipeline_label}...")
+        pipeline_cls = MyPipeline if is_my_pipeline else OneStagePipeline
+        config_cls = MyPipelineConfig if is_my_pipeline else OneStageCFGConfig
+        av_pipeline = pipeline_cls(
             transformer=model,
             video_encoder=video_encoder,
             video_decoder=vae_decoder,
@@ -1694,7 +1705,7 @@ def generate_video(
         # Create config with audio enabled
         # NOTE: fps=25.0 matches PyTorch's default frame_rate for audio latent calculations
         # LTX-2.3 reference: video_cfg=3.0, audio_cfg=7.0, rescale=0.7
-        av_config = OneStageCFGConfig(
+        av_config = config_cls(
             height=height,
             width=width,
             num_frames=num_frames,
@@ -1707,6 +1718,8 @@ def generate_video(
             dtype=compute_dtype,
             audio_enabled=generate_audio,
         )
+        if is_my_pipeline and not generate_audio:
+            print("  Internal audio branch: disabled")
 
         # Create image conditionings if provided
         images = []
@@ -2598,7 +2611,7 @@ def main():
     parser.add_argument(
         "--pipeline",
         type=str,
-        choices=["text-to-video", "distilled", "one-stage", "two-stage", "ic-lora", "keyframe-interpolation"],
+        choices=["text-to-video", "distilled", "one-stage", "two-stage", "my-pipeline", "ic-lora", "keyframe-interpolation"],
         default="text-to-video",
         help="Pipeline type (default: text-to-video)"
     )
