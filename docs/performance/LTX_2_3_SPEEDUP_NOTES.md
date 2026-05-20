@@ -63,6 +63,7 @@ else:
 - `my-pipeline` disables internal audio branch for no-audio runs.
 - Added persistent runner plan: `docs/performance/LTX_2_3_PERSISTENT_RUNNER_PLAN.md`.
 - Added persistent runner script: `scripts/generate_persistent.py`.
+- Added session-hot server script: `scripts/serve_persistent.py`.
 
 ## Benchmarks
 
@@ -194,6 +195,7 @@ Validation runs:
 | Smoke | `384x576`, `9f`, `1 step`, `1 chunk` | `134.76s` | `5.05s` | n/a | Validated imports, loads, prompt cache, MP4 save, manifest. |
 | Benchmark | `448x800`, `121f`, `8 steps`, `2 chunks` | `550.36s` | `223.85s` | `202.62s` | Chunk 2 skips model loads and prompt encode. |
 | Tiling fix benchmark | `448x800`, `121f`, `8 steps`, `2 chunks` | `491.50s` | `181.97s` | `181.46s` | Dead first tiled decode loop removed. |
+| Session-hot server | `448x800`, `121f`, `8 steps`, `2 chunks`, Gemma unload | `361.90s` | `152.73s` | `183.45s` | First full request after lazy startup; Gemma unloaded after encode. |
 
 Persistent benchmark details:
 
@@ -209,12 +211,25 @@ After tiled decode fix:
 - Wall per generated minute including loads/encode: `48.74 min`, down from `54.58 min`.
 - Output dir: `outputs/persistent_ltx23_tiling_fix_448x800_121f_8step_v1`.
 
+Session-hot server result:
+
+- Command used `--unload-gemma-after-encode --idle-timeout-minutes 30`.
+- Startup skipped Gemma load: `gemma_seconds=0.0`, `gemma_loaded_at_startup=false`.
+- Full request total: `361.90s`; prompt encode `24.75s`; Gemma reload `20.20s`.
+- Chunks: `152.73s` and `183.45s`.
+- `/status` after request: `prompt_cache_size=1`, `gemma_loaded=false`.
+- Idle server memory after Gemma unload: `49G` process memory by `top`; previous all-hot idle process was about `93G`.
+- System memory free after request: `84%` by `memory_pressure`.
+- Output dir: `outputs/persistent_server_session_hot_full_v1`.
+
 Persistent outputs:
 
 ```bash
 mpv "/Users/vitorfrasson/code/cockpit-backend-runtime-library-cli/tests/models/outputs/persistent_ltx23_smoke_v1/dog_meadow_smoke_chunk_000_seed42.mp4"
 mpv "/Users/vitorfrasson/code/cockpit-backend-runtime-library-cli/tests/models/outputs/persistent_ltx23_benchmark_448x800_121f_8step_v1/dog_meadow_chunk_000_seed42.mp4"
 mpv "/Users/vitorfrasson/code/cockpit-backend-runtime-library-cli/tests/models/outputs/persistent_ltx23_benchmark_448x800_121f_8step_v1/dog_meadow_chunk_001_seed43.mp4"
+mpv "/Users/vitorfrasson/code/LTX-2-MLX/outputs/persistent_server_session_hot_full_v1/dog_meadow_session_hot_chunk_000_seed42.mp4"
+mpv "/Users/vitorfrasson/code/LTX-2-MLX/outputs/persistent_server_session_hot_full_v1/dog_meadow_session_hot_chunk_001_seed43.mp4"
 ```
 
 Implementation path:

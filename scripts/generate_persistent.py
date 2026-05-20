@@ -76,6 +76,7 @@ class PersistentLTX23Runner:
         fast_mode: bool,
         low_memory: bool,
         max_length: int,
+        load_gemma: bool = True,
     ):
         self.weights_path = weights_path
         self.gemma_path = gemma_path
@@ -83,6 +84,7 @@ class PersistentLTX23Runner:
         self.max_length = max_length
         self.prompt_cache: dict[str, dict[str, mx.array]] = {}
         self.load_timings: dict[str, float] = {}
+        self.gemma: Gemma3Model | None = None
 
         if not is_v2_model(weights_path):
             raise ValueError("Persistent runner V1 supports LTX-2.3/V2 checkpoints only")
@@ -91,10 +93,12 @@ class PersistentLTX23Runner:
         self.tokenizer = self._load_tokenizer()
         self.load_timings["tokenizer_seconds"] = time.perf_counter() - started
 
-        started = time.perf_counter()
-        self.gemma = Gemma3Model(Gemma3Config())
-        load_gemma3_weights(self.gemma, gemma_path, use_fp16=False)
-        self.load_timings["gemma_seconds"] = time.perf_counter() - started
+        if load_gemma:
+            started = time.perf_counter()
+            self.gemma = self._load_gemma()
+            self.load_timings["gemma_seconds"] = time.perf_counter() - started
+        else:
+            self.load_timings["gemma_seconds"] = 0.0
 
         started = time.perf_counter()
         self.text_encoder = self._load_text_encoder()
@@ -135,6 +139,31 @@ class PersistentLTX23Runner:
             tokenizer.pad_token = tokenizer.eos_token
         return tokenizer
 
+    def _load_gemma(self) -> Gemma3Model:
+        gemma = Gemma3Model(Gemma3Config())
+        load_gemma3_weights(gemma, self.gemma_path, use_fp16=False)
+        return gemma
+
+    def ensure_gemma_loaded(self) -> None:
+        if self.gemma is not None:
+            return
+        started = time.perf_counter()
+        self.gemma = self._load_gemma()
+        seconds = time.perf_counter() - started
+        self.load_timings["gemma_reload_count"] = self.load_timings.get("gemma_reload_count", 0) + 1
+        self.load_timings["last_gemma_reload_seconds"] = seconds
+        self.load_timings["gemma_reload_seconds_total"] = (
+            self.load_timings.get("gemma_reload_seconds_total", 0.0) + seconds
+        )
+
+    def unload_gemma(self) -> None:
+        if self.gemma is None:
+            return
+        del self.gemma
+        self.gemma = None
+        gc.collect()
+        _clear_mlx_cache()
+
     def _load_text_encoder(self):
         if is_v2_model(self.weights_path):
             text_encoder = create_av_text_encoder_v2_from_checkpoint(self.weights_path)
@@ -169,6 +198,10 @@ class PersistentLTX23Runner:
         )
         input_ids = mx.array(encoding["input_ids"])
         attention_mask = mx.array(encoding["attention_mask"])
+
+        self.ensure_gemma_loaded()
+        if self.gemma is None:
+            raise RuntimeError("Gemma failed to load")
 
         last_hidden, all_hidden_states = self.gemma(
             input_ids,
